@@ -1,13 +1,6 @@
-## 프로젝트
-
-## Getting Started
-
-### Prerequisites
-
-#### Running Docker Containers
-
-`local` profile 로 실행하기 위하여 인프라가 설정되어 있는 Docker 컨테이너를 실행해주셔야 합니다.
-
-```bash
-docker-compose up -d
-```
+## [요구 사항](./docs/concert_booking_function_spec.md)
+## [기능 명세](./docs/concert_booking_requirements_spec.md)
+## [시퀀스](./docs/sequence_diagram.md)
+## [ERD](./docs/erd.md)
+## [INFRA](./docs/infra.md)
+## [API](./docs/api_spec.md)
