@@ -1,9 +1,15 @@
 version: '3'
 services:
-  mysql:
-    image: mysql:8.0
+  mysql-primary:
+    image: mysql:8.0.35
+    container_name: mysql-primary
     ports:
-      - "3306:3306"
+      - "33060:3306"
+    command: >
+      bash -c "
+      chmod 644 /etc/mysql/conf.d/my.cnf;
+      mysqld;
+      "
     environment:
       - MYSQL_ROOT_PASSWORD=root
       - MYSQL_USER=application
@@ -11,7 +17,181 @@ services:
       - MYSQL_DATABASE=hhplus
     volumes:
       - ./data/mysql/:/var/lib/mysql
+      - ./data/conf/mysql/primary.cnf:/etc/mysql/conf.d/my.cnf
+      - ./data/conf/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      concert_book:
+        ipv4_address: 172.11.0.9
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      timeout: 10s
+      retries: 10
+
+  mysql-replica:
+    image: mysql:8.0.35
+    container_name: mysql-replica
+    ports:
+      - "33061:3306"
+    depends_on:
+      mysql-primary:
+        condition: service_healthy
+    command: >
+      bash -c "
+      chmod 644 /etc/mysql/conf.d/my.cnf;
+      
+      echo 'Starting mysqld...';
+      mysqld &
+      
+      echo 'Waiting for MySQL to be ready...';
+      until mysqladmin ping -uroot -proot --silent; do
+        echo 'MySQL not ready, sleeping...';
+        sleep 3;
+      done
+      
+      echo 'MySQL is ready, waiting for primary...';
+      until mysqladmin ping -h172.11.0.9 -uroot -proot --silent; do
+        echo 'Primary not ready, sleeping...';
+        sleep 3;
+      done
+      
+      echo 'Configuring replica...';
+      mysql -e \"
+        STOP REPLICA;
+        RESET REPLICA ALL;
+        CHANGE REPLICATION SOURCE TO
+          SOURCE_HOST='172.11.0.9',
+          SOURCE_USER='replica_user',
+          SOURCE_PASSWORD='1234@#qwerQ',
+          SOURCE_AUTO_POSITION=1,
+          GET_SOURCE_PUBLIC_KEY=1;
+        START REPLICA;
+      \";
+      
+      tail -f /dev/null
+      "
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_USER=application
+      - MYSQL_PASSWORD=application
+      - MYSQL_DATABASE=hhplus
+    volumes:
+      - ./data/mysql-replica/:/var/lib/mysql
+      - ./data/conf/mysql/replica.cnf:/etc/mysql/conf.d/my.cnf
+    networks:
+      concert_book:
+        ipv4_address: 172.11.0.10
+
+# redis - primary-replica
+  redis-primary:
+    image: redis:latest
+    container_name: redis-primary
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/redis/redis.conf:/usr/local/etc/redis/redis.conf
+      - ./data/redis/:/data
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    networks:
+      concert_book:
+        ipv4_address: 172.11.0.11
+
+  redis-replica:
+    image: redis:latest
+    container_name: redis-replica
+    depends_on:
+      - redis-primary
+    command: ["redis-server", "--replicaof", "172.11.0.11", "6379"]
+    networks:
+      - concert_book
+
+# monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    volumes:
+      - ./data/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    networks:
+      concert_book:
+        ipv4_address: 172.11.0.12
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    depends_on:
+      - prometheus
+    networks:
+      concert_book:
+        ipv4_address: 172.11.0.13
+    volumes:
+      - ./data/grafana:/var/lib/grafana
+
+# kafka
+  zookeeper:
+    image: 'bitnami/zookeeper:3.7.2'
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+    volumes:
+      - ./data/zookeeper/data:/bitnami/zookeeper/data
+      - ./data/zookeeper/datalog:/bitnami/zookeeper/datalog
+      - ./data/zookeeper/logs:/bitnami/zookeeper/logs
+    networks:
+      concert_book:
+        ipv4_address: 172.11.0.20
+  kafka1:
+    image: 'bitnami/kafka:3.6.0'
+    container_name: kafka1
+    hostname: kafka1
+    ports:
+      - "19092"
+      - "9092:9092"
+    environment:
+      - KAFKA_BROKER_ID=1
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
+      - ALLOW_PLAINTEXT_LISTENER=yes
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CLIENT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      - KAFKA_CFG_LISTENERS=CLIENT://:19092,EXTERNAL://:9092
+      - KAFKA_CFG_ADVERTISED_LISTENERS=CLIENT://kafka1:19092,EXTERNAL://localhost:9092
+      - KAFKA_INTER_BROKER_LISTENER_NAME=CLIENT
+    depends_on:
+      - zookeeper
+    volumes:
+      - ./data/kafka1:/bitnami/kafka/data
+    networks:
+      concert_book:
+        ipv4_address: 172.11.0.21
+
+  kafka-ui:
+    image: 'provectuslabs/kafka-ui:v0.7.1'
+    container_name: kafka-ui
+    ports:
+      - "8081:8080"
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=local
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka1:19092
+    depends_on:
+      - zookeeper
+      - kafka1
+    networks:
+      concert_book:
+        ipv4_address: 172.11.0.24
+
+
 
 networks:
-  default:
+  concert_book:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.11.0.0/16
+
+
