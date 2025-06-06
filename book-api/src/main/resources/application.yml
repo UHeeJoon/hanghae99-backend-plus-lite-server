@@ -16,7 +16,9 @@ spring:
     generate-ddl: false
     show-sql: false
     hibernate:
-      ddl-auto: create
+      ddl-auto: validate
+      naming:
+        physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
     properties:
       hibernate.timezone.default_storage: NORMALIZE_UTC
       hibernate.jdbc.time_zone: UTC
@@ -37,3 +39,5 @@ spring:
         username: application
         password: application
         driverClassName: com.mysql.cj.jdbc.Driver
+  jpa:
+    show-sql: true
