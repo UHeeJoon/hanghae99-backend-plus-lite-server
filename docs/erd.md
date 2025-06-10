@@ -69,6 +69,7 @@ erDiagram
         ENUM status
         VARCHAR reason
         DATETIME paid_at
+        DATETIME cancelled_at
     }
 
     POINT_HISTORIES {
@@ -182,13 +183,14 @@ CREATE INDEX idx_seats_reservations_reservation_id ON SEATS_RESERVATIONS (reserv
 CREATE TABLE PAYMENTS
 (
     id             BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '결제 ID',
-    user_id        BIGINT                     NOT NULL COMMENT '결제한 유저',
-    reservation_id BIGINT                     NOT NULL COMMENT '예약 참조',
-    payment_token  VARCHAR(255)               NOT NULL COMMENT '결제 정보 식별 랜덤 문자',
-    amount         INT UNSIGNED               NOT NULL COMMENT '결제 금액',
-    status         ENUM ('SUCCESS', 'FAILED') NOT NULL COMMENT '결제 상태',
+    user_id        BIGINT                                   NOT NULL COMMENT '결제한 유저',
+    reservation_id BIGINT                                   NOT NULL COMMENT '예약 참조',
+    payment_token  VARCHAR(255)                             NOT NULL COMMENT '결제 정보 식별 랜덤 문자',
+    amount         INT UNSIGNED                             NOT NULL COMMENT '결제 금액',
+    status         ENUM ('SUCCESS', 'FAILED', 'CANCELLED') NOT NULL COMMENT '결제 상태 (성공, 실패, 취소)',
     reason         VARCHAR(255) COMMENT '실패 사유',
-    paid_at        DATETIME                   NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '결제 시각',
+    paid_at        DATETIME                                 NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '결제 시각',
+    cancelled_at   DATETIME COMMENT '결제 취소 시각',
     UNIQUE (payment_token)
 ) CHARACTER SET utf8mb4
   COLLATE utf8mb4_unicode_ci
@@ -214,5 +216,6 @@ CREATE TABLE POINT_HISTORIES
 
 CREATE INDEX idx_point_history_user_id_and_created_at_desc ON POINT_HISTORIES (user_id, created_at desc);
 CREATE INDEX idx_point_history_type_status ON POINT_HISTORIES (type, status);
+
 
 ```
